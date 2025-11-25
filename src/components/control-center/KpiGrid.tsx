@@ -89,17 +89,6 @@ export const KpiGrid = ({ summary, latest, previous, timeseries }: KpiGridProps)
       spark: buildSpark((item) => item.arr),
     },
     {
-      key: 'other-revenue',
-      label: 'Other Revenue',
-      value: latestTotals?.otherRevenue ?? 0,
-      format: 'currency' as KpiFormat,
-      delta: computeDelta(
-        latestTotals?.otherRevenue ?? 0,
-        previousTotals?.otherRevenue ?? 0
-      ),
-      spark: buildSpark((item) => item.otherRevenue),
-    },
-    {
       key: 'ltv',
       label: 'Lifetime Value',
       value: summary?.ltv ?? latestTotals?.ltv ?? 0,
@@ -263,7 +252,7 @@ export const KpiGrid = ({ summary, latest, previous, timeseries }: KpiGridProps)
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
       {cards.map((card) => (
         <Card key={card.key} className="flex flex-col gap-3">
           <CardHeader className="space-y-2">

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  createProjectRecord,
   createScenario,
+  deleteProjectRecord,
   fetchDefaults,
   fetchScenarios,
   runSimulation,
@@ -15,6 +17,7 @@ import type {
   RateOverride,
   ScenarioRecord,
   SharedExpenses,
+  SharedExpenseOverrides,
   SimulationProjectPayload,
   SimulationRequestPayload,
   SimulationResponse,
@@ -65,6 +68,53 @@ const buildSharedExpenseDiff = (
   return Object.keys(diff).length ? diff : undefined;
 };
 
+const cloneSharedExpenseOverrides = (overrides?: SharedExpenseOverrides | null) => {
+  if (!overrides) return {};
+  return Object.fromEntries(
+    Object.entries(overrides).map(([month, value]) => [month, { ...(value ?? {}) }])
+  );
+};
+
+const buildSharedExpenseOverridesDiff = (
+  current?: SharedExpenseOverrides | null,
+  baseline?: SharedExpenseOverrides | null
+) => {
+  if (!current) return undefined;
+  const monthKeys = new Set([
+    ...Object.keys(current),
+    ...Object.keys(baseline ?? {}),
+  ]);
+  const diff: SharedExpenseOverrides = {};
+  monthKeys.forEach((month) => {
+    const currentValues = current[month];
+    const baselineValues = baseline?.[month];
+    if (!currentValues && !baselineValues) {
+      return;
+    }
+    const monthDiff: Partial<SharedExpenses> = {};
+    SHARED_EXPENSE_KEYS.forEach((key) => {
+      const currentValue = currentValues?.[key];
+      const baselineValue = baselineValues?.[key];
+      if (currentValue === undefined && baselineValue === undefined) {
+        return;
+      }
+      if (
+        baselineValue === undefined ||
+        currentValue === undefined ||
+        Math.abs(currentValue - baselineValue) > 0.0001
+      ) {
+        if (currentValue !== undefined) {
+          monthDiff[key] = currentValue;
+        }
+      }
+    });
+    if (Object.keys(monthDiff).length) {
+      diff[month] = monthDiff;
+    }
+  });
+  return Object.keys(diff).length ? diff : undefined;
+};
+
 export const useForecastSimulation = () => {
   const [blueprint, setBlueprint] = useState<ForecastBlueprint | null>(null);
   const [simulation, setSimulation] = useState<SimulationResponse | null>(null);
@@ -72,7 +122,8 @@ export const useForecastSimulation = () => {
   const [projectSettings, setProjectSettings] = useState<ProjectSettingsState>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
-  const [sharedExpenses, setSharedExpenses] = useState<SharedExpenses | null>(null);
+  const [sharedExpenseBase, setSharedExpenseBase] = useState<SharedExpenses | null>(null);
+  const [sharedExpenseOverrides, setSharedExpenseOverrides] = useState<SharedExpenseOverrides>({});
   const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const [scenarioDraft, setScenarioDraft] = useState<{ name: string; notes: string }>({
@@ -82,27 +133,39 @@ export const useForecastSimulation = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isSavingScenario, setIsSavingScenario] = useState(false);
+  const [isProjectMutating, setIsProjectMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadDefaults = async () => {
+  const loadDefaults = useCallback(
+    async (options?: { focusProjectId?: string }) => {
       try {
         setIsLoading(true);
         const { blueprint: incomingBlueprint, simulation: initialSimulation } = await fetchDefaults();
         setBlueprint(incomingBlueprint);
         setSimulation(initialSimulation);
-        setSelectedProjectId(incomingBlueprint.projects[0]?.id ?? null);
-        setSelectedProjectIds(incomingBlueprint.projects.map((project) => project.id));
-        setSharedExpenses(mergeSharedExpenses(incomingBlueprint.globalSettings.sharedExpenses));
+        const projectIds = incomingBlueprint.projects.map((project) => project.id);
+        const focusId =
+          options?.focusProjectId && projectIds.includes(options.focusProjectId)
+            ? options.focusProjectId
+            : incomingBlueprint.projects[0]?.id ?? null;
+        setSelectedProjectId(focusId);
+        setSelectedProjectIds(projectIds);
+        setSharedExpenseBase(mergeSharedExpenses(incomingBlueprint.globalSettings.sharedExpenses));
+        setSharedExpenseOverrides(
+          cloneSharedExpenseOverrides(incomingBlueprint.globalSettings.sharedExpenseOverrides)
+        );
       } catch (err) {
         setError((err as Error).message);
       } finally {
         setIsLoading(false);
       }
-    };
+    },
+    []
+  );
 
+  useEffect(() => {
     void loadDefaults();
-  }, []);
+  }, [loadDefaults]);
 
   const refreshScenarios = useCallback(async () => {
     try {
@@ -118,14 +181,56 @@ export const useForecastSimulation = () => {
   }, [refreshScenarios]);
 
   const resolveSharedExpenseDiff = useCallback(
-    (nextShared?: SharedExpenses | null) => {
+    (options?: {
+      base?: SharedExpenses | null;
+      overrides?: SharedExpenseOverrides;
+    }) => {
       if (!blueprint) return undefined;
-      return buildSharedExpenseDiff(
-        nextShared ?? sharedExpenses,
-        blueprint.globalSettings.sharedExpenses
+      const baselineBase = mergeSharedExpenses(blueprint.globalSettings.sharedExpenses);
+      const baseDiff = buildSharedExpenseDiff(options?.base ?? sharedExpenseBase, baselineBase);
+      const overrideDiff = buildSharedExpenseOverridesDiff(
+        options?.overrides ?? sharedExpenseOverrides,
+        blueprint.globalSettings.sharedExpenseOverrides
       );
+      if (!baseDiff && !overrideDiff) return undefined;
+      return {
+        ...(baseDiff ? { sharedExpenses: baseDiff } : {}),
+        ...(overrideDiff ? { sharedExpenseOverrides: overrideDiff } : {}),
+      };
     },
-    [blueprint, sharedExpenses]
+    [blueprint, sharedExpenseBase, sharedExpenseOverrides]
+  );
+
+  const addProject = useCallback(
+    async (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        setIsProjectMutating(true);
+        const project = await createProjectRecord(trimmed);
+        await loadDefaults({ focusProjectId: project.id });
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setIsProjectMutating(false);
+      }
+    },
+    [loadDefaults]
+  );
+
+  const removeProject = useCallback(
+    async (projectId: string) => {
+      try {
+        setIsProjectMutating(true);
+        await deleteProjectRecord(projectId);
+        await loadDefaults();
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setIsProjectMutating(false);
+      }
+    },
+    [loadDefaults]
   );
 
   const triggerSimulation = useCallback(
@@ -133,7 +238,8 @@ export const useForecastSimulation = () => {
       overrides?: OverrideState;
       projectSettings?: ProjectSettingsState;
       selected?: string[];
-      sharedExpenses?: SharedExpenses | null;
+      sharedExpenseBase?: SharedExpenses | null;
+      sharedExpenseOverrides?: SharedExpenseOverrides;
     }) => {
       if (!blueprint) {
         return;
@@ -141,7 +247,8 @@ export const useForecastSimulation = () => {
       const nextOverrides = options?.overrides ?? overrides;
       const nextSettings = options?.projectSettings ?? projectSettings;
       const nextSelected = options?.selected ?? selectedProjectIds;
-      const nextShared = options?.sharedExpenses ?? sharedExpenses;
+      const nextSharedBase = options?.sharedExpenseBase ?? sharedExpenseBase;
+      const nextSharedOverrides = options?.sharedExpenseOverrides ?? sharedExpenseOverrides;
 
       setIsSimulating(true);
       try {
@@ -184,9 +291,12 @@ export const useForecastSimulation = () => {
           payload.projects = projectPayload;
         }
 
-        const sharedDiff = resolveSharedExpenseDiff(nextShared);
+        const sharedDiff = resolveSharedExpenseDiff({
+          base: nextSharedBase,
+          overrides: nextSharedOverrides,
+        });
         if (sharedDiff) {
-          payload.globalSettings = { sharedExpenses: sharedDiff };
+          payload.globalSettings = sharedDiff;
         }
 
         const response = await runSimulation(payload);
@@ -197,7 +307,15 @@ export const useForecastSimulation = () => {
         setIsSimulating(false);
       }
     },
-    [blueprint, overrides, projectSettings, selectedProjectIds, sharedExpenses, resolveSharedExpenseDiff]
+    [
+      blueprint,
+      overrides,
+      projectSettings,
+      selectedProjectIds,
+      sharedExpenseBase,
+      sharedExpenseOverrides,
+      resolveSharedExpenseDiff,
+    ]
   );
 
   const upsertOverrides = useCallback(
@@ -380,24 +498,69 @@ export const useForecastSimulation = () => {
     [triggerSimulation]
   );
 
-  const updateSharedExpense = useCallback(
+  const updateSharedExpenseBase = useCallback(
     (key: keyof SharedExpenses, value: number) => {
-      setSharedExpenses((prev) => {
-        const baseline = prev ?? (blueprint ? mergeSharedExpenses(blueprint.globalSettings.sharedExpenses) : null);
-        if (!baseline) return prev;
-        const next = { ...baseline, [key]: Number.isFinite(value) ? Number(value) : 0 };
-        void triggerSimulation({ sharedExpenses: next });
+      const baseline =
+        sharedExpenseBase ??
+        (blueprint ? mergeSharedExpenses(blueprint.globalSettings.sharedExpenses) : null);
+      if (!baseline) return;
+      const normalized = Number.isFinite(value) ? Number(value) : 0;
+      const next = { ...baseline, [key]: normalized };
+      setSharedExpenseBase(next);
+      void triggerSimulation({ sharedExpenseBase: next });
+    },
+    [blueprint, sharedExpenseBase, triggerSimulation]
+  );
+
+  const updateSharedExpenseOverride = useCallback(
+    (month: string, key: keyof SharedExpenses, value: number) => {
+      const baseline =
+        sharedExpenseBase ??
+        (blueprint ? mergeSharedExpenses(blueprint.globalSettings.sharedExpenses) : null);
+      if (!baseline) return;
+      const normalized = Number.isFinite(value) ? Number(value) : 0;
+      setSharedExpenseOverrides((prev) => {
+        const next: SharedExpenseOverrides = { ...prev };
+        const monthOverrides = { ...(next[month] ?? {}) };
+        if (Math.abs(baseline[key] - normalized) < 0.0001) {
+          delete monthOverrides[key];
+        } else {
+          monthOverrides[key] = normalized;
+        }
+        if (Object.keys(monthOverrides).length === 0) {
+          delete next[month];
+        } else {
+          next[month] = monthOverrides;
+        }
+        void triggerSimulation({ sharedExpenseOverrides: next });
         return next;
       });
     },
-    [blueprint, triggerSimulation]
+    [blueprint, sharedExpenseBase, triggerSimulation]
   );
+
+  const clearSharedExpenseOverridesForMonth = useCallback((month: string) => {
+    setSharedExpenseOverrides((prev) => {
+      if (!prev[month]) return prev;
+      const next: SharedExpenseOverrides = { ...prev };
+      delete next[month];
+      void triggerSimulation({ sharedExpenseOverrides: next });
+      return next;
+    });
+  }, [triggerSimulation]);
 
   const resetSharedExpenseInputs = useCallback(() => {
     if (!blueprint) return;
     const defaults = mergeSharedExpenses(blueprint.globalSettings.sharedExpenses);
-    setSharedExpenses(defaults);
-    void triggerSimulation({ sharedExpenses: defaults });
+    const overrideDefaults = cloneSharedExpenseOverrides(
+      blueprint.globalSettings.sharedExpenseOverrides
+    );
+    setSharedExpenseBase(defaults);
+    setSharedExpenseOverrides(overrideDefaults);
+    void triggerSimulation({
+      sharedExpenseBase: defaults,
+      sharedExpenseOverrides: overrideDefaults,
+    });
   }, [blueprint, triggerSimulation]);
 
   const applyScenario = useCallback(
@@ -407,9 +570,12 @@ export const useForecastSimulation = () => {
       const nextSettings = scenario.projectSettings ?? {};
       const fallbackProjects = blueprint.projects.map((project) => project.id);
       const nextSelected = scenario.selectedProjectIds?.length ? scenario.selectedProjectIds : fallbackProjects;
-      const nextShared = mergeSharedExpenses(
+      const nextSharedBase = mergeSharedExpenses(
         blueprint.globalSettings.sharedExpenses,
         scenario.globalSettings?.sharedExpenses ?? null
+      );
+      const nextSharedOverrides = cloneSharedExpenseOverrides(
+        scenario.globalSettings?.sharedExpenseOverrides ?? {}
       );
 
       setOverrides(nextOverrides);
@@ -418,13 +584,15 @@ export const useForecastSimulation = () => {
       setSelectedProjectId((prev) => (prev && nextSelected.includes(prev) ? prev : nextSelected[0] ?? null));
       setActiveScenarioId(scenario.id);
       setScenarioDraft({ name: scenario.name, notes: scenario.notes ?? '' });
-      setSharedExpenses(nextShared);
+      setSharedExpenseBase(nextSharedBase);
+      setSharedExpenseOverrides(nextSharedOverrides);
 
       void triggerSimulation({
         overrides: nextOverrides,
         projectSettings: nextSettings,
         selected: nextSelected,
-        sharedExpenses: nextShared,
+        sharedExpenseBase: nextSharedBase,
+        sharedExpenseOverrides: nextSharedOverrides,
       });
     },
     [blueprint, triggerSimulation]
@@ -436,8 +604,15 @@ export const useForecastSimulation = () => {
         setActiveScenarioId(null);
         if (blueprint) {
           const defaults = mergeSharedExpenses(blueprint.globalSettings.sharedExpenses);
-          setSharedExpenses(defaults);
-          void triggerSimulation({ sharedExpenses: defaults });
+          const defaultOverrides = cloneSharedExpenseOverrides(
+            blueprint.globalSettings.sharedExpenseOverrides
+          );
+          setSharedExpenseBase(defaults);
+          setSharedExpenseOverrides(defaultOverrides);
+          void triggerSimulation({
+            sharedExpenseBase: defaults,
+            sharedExpenseOverrides: defaultOverrides,
+          });
         }
         return;
       }
@@ -462,14 +637,14 @@ export const useForecastSimulation = () => {
       }
 
       const notes = scenarioDraft.notes.trim();
-      const sharedDiff = resolveSharedExpenseDiff(sharedExpenses);
+      const sharedDiff = resolveSharedExpenseDiff();
       const payload = {
         name: trimmedName,
         notes: notes.length ? notes : undefined,
         overrides,
         projectSettings,
         selectedProjectIds,
-        globalSettings: sharedDiff ? { sharedExpenses: sharedDiff } : undefined,
+        globalSettings: sharedDiff,
       };
 
       setIsSavingScenario(true);
@@ -494,7 +669,6 @@ export const useForecastSimulation = () => {
       scenarioDraft,
       selectedProjectIds,
       resolveSharedExpenseDiff,
-      sharedExpenses,
     ]
   );
 
@@ -509,6 +683,7 @@ export const useForecastSimulation = () => {
     isLoading,
     isSimulating,
     isSavingScenario,
+    isProjectMutating,
     error,
     selectedProjectId,
     setSelectedProjectId,
@@ -521,8 +696,11 @@ export const useForecastSimulation = () => {
     resetProjectSettings,
     overrides,
     projectSettings,
-    sharedExpenses,
-    updateSharedExpense,
+    sharedExpenseBase,
+    sharedExpenseOverrides,
+    updateSharedExpenseBase,
+    updateSharedExpenseOverride,
+    clearSharedExpenseOverridesForMonth,
     resetSharedExpenseInputs,
     selectedProject,
     scenarios,
@@ -531,6 +709,8 @@ export const useForecastSimulation = () => {
     scenarioDraft,
     updateScenarioDraft,
     persistScenario,
+    addProject,
+    removeProject,
     refresh: () => triggerSimulation(),
   };
 };

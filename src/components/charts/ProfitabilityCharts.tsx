@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,25 +26,30 @@ const formatDate = (iso: string) =>
   );
 
 export const ProfitabilityCharts = ({ timeseries }: ProfitabilityChartsProps) => {
-  const data = timeseries.map((entry) => ({
-    date: entry.date,
-    revenue: entry.totals.grossRevenue,
-    netRevenue: entry.totals.netRevenue,
-    cogs: entry.totals.cogs,
-    totalExpenses:
+  const data = timeseries.map((entry) => {
+    const totalExpenses =
       entry.totals.salesMarketingExpense +
       entry.totals.sharedExpenses +
       (entry.totals.fees ?? 0) +
       (entry.totals.failedCharges ?? 0) +
-      (entry.totals.refunds ?? 0),
-    salesMarketing: entry.totals.salesMarketingExpense,
-    sharedExpenses: entry.totals.sharedExpenses,
-    otherExpenses:
-      (entry.totals.fees ?? 0) + (entry.totals.failedCharges ?? 0) + (entry.totals.refunds ?? 0),
-    vat: entry.totals.vat,
-    tax: entry.totals.corporateIncomeTax,
-    profit: entry.totals.profit,
-  }));
+      (entry.totals.refunds ?? 0);
+
+    return {
+      date: entry.date,
+      revenue: entry.totals.grossRevenue,
+      netRevenue: entry.totals.netRevenue,
+      cogs: entry.totals.cogs,
+      totalExpenses,
+      totalExpensesNegative: -totalExpenses,
+      salesMarketing: entry.totals.salesMarketingExpense,
+      sharedExpenses: entry.totals.sharedExpenses,
+      otherExpenses:
+        (entry.totals.fees ?? 0) + (entry.totals.failedCharges ?? 0) + (entry.totals.refunds ?? 0),
+      vat: entry.totals.vat,
+      tax: entry.totals.corporateIncomeTax,
+      profit: entry.totals.profit,
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -56,7 +62,8 @@ export const ProfitabilityCharts = ({ timeseries }: ProfitabilityChartsProps) =>
         </div>
         <div className="mt-4 h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ left: 0, right: 20, top: 10, bottom: 0 }}>
+            <BarChart data={data} margin={{ left: 0, right: 20, top: 10, bottom: 0 }} stackOffset="sign">
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
               <XAxis dataKey="date" tickFormatter={formatDate} stroke="#94a3b8" tickLine={false} />
               <YAxis
                 stroke="#94a3b8"
@@ -65,28 +72,22 @@ export const ProfitabilityCharts = ({ timeseries }: ProfitabilityChartsProps) =>
               <Tooltip
                 contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(148,163,184,0.2)' }}
                 labelFormatter={(value) => formatDate(value as string)}
-                formatter={(value: number, name) => [formatCompactCurrency(value), name]}
+                formatter={(value: number, name) => [
+                  formatCompactCurrency(name === 'Total Expenses' ? Math.abs(value) : value),
+                  name,
+                ]}
               />
               <Legend />
-              <Area
-                type="monotone"
-                dataKey="revenue"
-                name="Revenue"
-                stroke="#6366f1"
-                fill="#6366f1"
-                fillOpacity={0.25}
-                strokeWidth={2}
-              />
-              <Area
-                type="monotone"
-                dataKey="totalExpenses"
-                name="Expenses"
-                stroke="#f97316"
+              <ReferenceLine y={0} stroke="#1e293b" strokeDasharray="4 4" />
+              <Bar dataKey="revenue" name="Gross Revenue" fill="#6366f1" stackId="profit" radius={[6, 6, 0, 0]} />
+              <Bar
+                dataKey="totalExpensesNegative"
+                name="Total Expenses"
                 fill="#f97316"
-                fillOpacity={0.2}
-                strokeWidth={2}
+                stackId="profit"
+                radius={[0, 0, 6, 6]}
               />
-            </AreaChart>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>

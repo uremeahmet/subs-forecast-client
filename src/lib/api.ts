@@ -1,5 +1,6 @@
 import type {
   DefaultsResponse,
+  ProjectRecord,
   ScenarioPayload,
   ScenarioRecord,
   SimulationRequestPayload,
@@ -57,4 +58,23 @@ export const updateScenarioRecord = async (
     body: JSON.stringify(payload),
   });
   return handleResponse<ScenarioRecord>(response);
+};
+
+export const createProjectRecord = async (name: string): Promise<ProjectRecord> => {
+  const response = await fetch(`${API_BASE_URL}/api/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  return handleResponse<ProjectRecord>(response);
+};
+
+export const deleteProjectRecord = async (id: string): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to delete project');
+  }
 };

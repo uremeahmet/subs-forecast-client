@@ -1,8 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { BlueprintProject, OverrideState, SharedExpenses } from '@/lib/types';
-import { cn } from '@/lib/cn';
+import type { SharedExpenses, SharedExpenseOverrides } from '@/lib/types';
 
 const sharedExpenseLabels: Record<keyof SharedExpenses, string> = {
   generalAndAdministrative: 'General & Administrative',
@@ -11,171 +10,167 @@ const sharedExpenseLabels: Record<keyof SharedExpenses, string> = {
   depreciationAndAmortization: 'Depreciation & Amortization',
 };
 
+const monthLabel = (iso: string) =>
+  new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(`${iso}-01`));
+
 interface ExpensesPanelProps {
-  projects: BlueprintProject[];
-  overrides: OverrideState;
-  sharedExpenses: SharedExpenses | null;
-  onSharedExpenseChange: (key: keyof SharedExpenses, value: number) => void;
+  months: string[];
+  baseExpenses: SharedExpenses | null;
+  overrides: SharedExpenseOverrides;
+  onBaseChange: (key: keyof SharedExpenses, value: number) => void;
+  onOverrideChange: (month: string, key: keyof SharedExpenses, value: number) => void;
   onResetSharedExpenses: () => void;
-  onSalesMarketingChange: (projectId: string, date: string, value: number) => void;
+  onResetMonthOverrides: (month: string) => void;
 }
 
-const monthLabel = (date: string) => {
-  const [year, month] = date.split('-');
-  const iso = `${year}-${month}-01`;
-  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(iso));
-};
-
 export const ExpensesPanel = ({
-  projects,
+  months,
+  baseExpenses,
   overrides,
-  sharedExpenses,
-  onSharedExpenseChange,
+  onBaseChange,
+  onOverrideChange,
   onResetSharedExpenses,
-  onSalesMarketingChange,
+  onResetMonthOverrides,
 }: ExpensesPanelProps) => {
-  const [activeProjectId, setActiveProjectId] = useState<string>(projects[0]?.id ?? '');
-
-  const activeProject =
-    projects.find((project) => project.id === activeProjectId) ?? projects[0] ?? null;
-
   const groupedMonths = useMemo(() => {
-    if (!activeProject) return {};
-    return activeProject.monthlyData.reduce<Record<string, typeof activeProject.monthlyData>>(
-      (acc, entry) => {
-        const year = entry.date.slice(0, 4);
-        if (!acc[year]) acc[year] = [];
-        acc[year].push(entry);
-        return acc;
-      },
-      {}
-    );
-  }, [activeProject]);
+    return months.reduce<Record<string, string[]>>((acc, month) => {
+      const year = month.slice(0, 4);
+      if (!acc[year]) acc[year] = [];
+      acc[year].push(month);
+      return acc;
+    }, {});
+  }, [months]);
+
+  const years = useMemo(() => Object.keys(groupedMonths).sort(), [groupedMonths]);
+  const [openYear, setOpenYear] = useState<string>('');
+  const resolvedOpenYear = useMemo(() => {
+    if (!years.length) return '';
+    if (openYear && years.includes(openYear)) {
+      return openYear;
+    }
+    return years[0];
+  }, [openYear, years]);
 
   return (
     <section className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.4em] text-blue-300">Expenses Control</p>
-          <h2 className="text-2xl font-semibold text-white">Operating Expenses</h2>
+          <h2 className="text-2xl font-semibold text-white">Shared Operating Expenses</h2>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onResetSharedExpenses}
-            className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/70 hover:border-blue-400 hover:text-white"
-          >
-            Reset Shared
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onResetSharedExpenses}
+          className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/70 hover:border-blue-400 hover:text-white"
+        >
+          Reset Shared
+        </button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Shared Expenses</h3>
-            <p className="text-xs uppercase tracking-wide text-white/50">Monthly Inputs</p>
-          </div>
-          <div className="space-y-4">
-            {sharedExpenses ? (
-              (Object.keys(sharedExpenseLabels) as Array<keyof SharedExpenses>).map((key) => (
-                <label key={key} className="flex flex-col gap-2 text-sm text-white/80">
-                  <span className="text-[10px] uppercase tracking-[0.3em] text-white/40">
-                    {sharedExpenseLabels[key]}
-                  </span>
-                  <input
-                    type="number"
-                    step="100"
-                    min={0}
-                    value={sharedExpenses[key] ?? 0}
-                    onChange={(event) =>
-                      onSharedExpenseChange(key, Number(event.target.value) || 0)
-                    }
-                    className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white outline-none focus:border-blue-400"
-                  />
-                </label>
-              ))
-            ) : (
-              <p className="text-sm text-white/60">Loading shared expenses…</p>
-            )}
+      <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+        {baseExpenses ? (
+          (Object.keys(sharedExpenseLabels) as Array<keyof SharedExpenses>).map((key) => (
+            <label key={key} className="flex flex-col gap-2 text-sm text-white/80">
+              <span className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                {sharedExpenseLabels[key]}
+              </span>
+              <input
+                type="number"
+                step="100"
+                min={0}
+                value={baseExpenses[key] ?? 0}
+                onChange={(event) => onBaseChange(key, Number(event.target.value) || 0)}
+                className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white outline-none focus:border-blue-400"
+              />
+            </label>
+          ))
+        ) : (
+          <p className="text-sm text-white/60">Loading shared expenses…</p>
+        )}
+      </div>
+
+      <div className="mt-8">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.4em] text-blue-300">Monthly Overrides</p>
+            <h3 className="text-lg font-semibold text-white">Adjust Per-Month Spending</h3>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Sales & Marketing</h3>
-              <p className="text-xs uppercase tracking-wide text-white/50">
-                Per-project monthly overrides
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {projects.map((project) => (
+        <div className="space-y-4">
+          {years.map((year) => {
+            const isExpanded = resolvedOpenYear === year;
+            return (
+              <div key={year} className="rounded-2xl border border-white/10 bg-white/5">
                 <button
-                  key={project.id}
                   type="button"
-                  onClick={() => setActiveProjectId(project.id)}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition',
-                    activeProject?.id === project.id
-                      ? 'border-blue-400 bg-blue-500/20 text-blue-100'
-                      : 'border-white/15 text-white/60 hover:border-white/40 hover:text-white'
-                  )}
+                  onClick={() => setOpenYear(() => (isExpanded ? '' : year))}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-white/80"
                 >
-                  {project.name}
+                  <span>{year}</span>
+                  <span className="text-xs uppercase tracking-[0.3em] text-blue-300">
+                    {isExpanded ? 'Hide Months' : 'Show Months'}
+                  </span>
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {activeProject ? (
-            <div className="mt-4 space-y-3">
-              {Object.keys(groupedMonths).map((year) => (
-                <div key={year} className="rounded-xl border border-white/10">
-                  <div className="border-b border-white/5 bg-white/5 px-4 py-2 text-sm font-semibold text-white/70">
-                    {year}
-                  </div>
-                  <div className="divide-y divide-white/5">
-                    {groupedMonths[year]?.map((entry) => {
-                      const override =
-                        overrides[activeProject.id]?.[entry.date]?.salesMarketingExpense;
-                      const value = override ?? entry.salesMarketingExpense ?? 0;
-                      const isCustom = override !== undefined;
-                      return (
-                        <div
-                          key={entry.date}
-                          className="flex items-center gap-4 px-4 py-3 text-sm text-white/80"
-                        >
-                          <div className="w-20 text-xs uppercase tracking-wide text-white/50">
-                            {monthLabel(entry.date)}
+                {isExpanded && (
+                <div className="divide-y divide-white/10">
+                  {groupedMonths[year]?.map((month) => {
+                    const override = overrides[month];
+                    return (
+                      <div key={month} className="space-y-3 px-4 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">{year}</p>
+                            <p className="text-sm font-semibold text-white">{monthLabel(month)}</p>
                           </div>
-                          <input
-                            type="number"
-                            step="50"
-                            min={0}
-                            value={value}
-                            onChange={(event) =>
-                              onSalesMarketingChange(
-                                activeProject.id,
-                                entry.date,
-                                Number(event.target.value) || 0
-                              )
-                            }
-                            className={cn(
-                              'flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-white outline-none focus:border-blue-400',
-                              isCustom && 'border-emerald-400 bg-emerald-500/10'
-                            )}
-                          />
+                          <button
+                            type="button"
+                            disabled={!override}
+                            onClick={() => onResetMonthOverrides(month)}
+                            className="text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
+                          >
+                            Reset Month
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {(Object.keys(sharedExpenseLabels) as Array<keyof SharedExpenses>).map(
+                            (key) => {
+                              const baseValue = baseExpenses?.[key] ?? 0;
+                              const currentValue = override?.[key] ?? baseValue;
+                              const isCustom = override?.[key] !== undefined;
+                              return (
+                                <label key={key} className="flex flex-col gap-2 text-sm text-white/80">
+                                  <span className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                                    {sharedExpenseLabels[key]}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    step="100"
+                                    min={0}
+                                    value={currentValue}
+                                    disabled={!baseExpenses}
+                                    onChange={(event) =>
+                                      onOverrideChange(month, key, Number(event.target.value) || 0)
+                                    }
+                                    className={`rounded-xl border px-3 py-2 text-white outline-none focus:border-emerald-400 ${
+                                      isCustom
+                                        ? 'border-emerald-300/70 bg-emerald-500/10'
+                                        : 'border-white/10 bg-slate-900/40'
+                                    } ${!baseExpenses ? 'opacity-50' : ''}`}
+                                  />
+                                </label>
+                              );
+                            }
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-white/60">No projects available to edit.</p>
-          )}
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

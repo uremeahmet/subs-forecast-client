@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { ProjectSidebar } from '@/components/sidebar/ProjectSidebar';
 import { useForecastSimulation } from '@/hooks/useForecastSimulation';
 import { KpiGrid } from '@/components/control-center/KpiGrid';
@@ -15,9 +15,10 @@ import { cn } from '@/lib/cn';
 import { formatCurrency, formatNumber } from '@/lib/format';
 
 export default function HomePage() {
-  const [activePanel, setActivePanel] = useState<'overview' | 'expenses-input' | 'expenses-analytics'>(
-    'overview'
-  );
+  const [activePanel, setActivePanel] = useState<
+    'overview' | 'project-settings' | 'expenses-input' | 'expenses-analytics'
+  >('overview');
+  const [newProjectName, setNewProjectName] = useState('');
   const {
     blueprint,
     simulation,
@@ -35,8 +36,11 @@ export default function HomePage() {
     resetProjectSettings,
     overrides,
     projectSettings,
-    sharedExpenses,
-    updateSharedExpense,
+    sharedExpenseBase,
+    sharedExpenseOverrides,
+    updateSharedExpenseBase,
+    updateSharedExpenseOverride,
+    clearSharedExpenseOverridesForMonth,
     resetSharedExpenseInputs,
     selectedProject,
     refresh,
@@ -47,7 +51,20 @@ export default function HomePage() {
     updateScenarioDraft,
     persistScenario,
     isSavingScenario,
+    addProject,
+    removeProject,
+    isProjectMutating,
   } = useForecastSimulation();
+
+  const handleCreateProject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = newProjectName.trim();
+    if (!trimmed) {
+      return;
+    }
+    await addProject(trimmed);
+    setNewProjectName('');
+  };
 
   if (isLoading || !blueprint || !simulation) {
     return (
@@ -67,21 +84,8 @@ export default function HomePage() {
   const selectedAdjustments = selectedProjectId ? projectSettings[selectedProjectId] : undefined;
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-white">
-      <ProjectSidebar
-        projects={blueprint.projects}
-        selectedProjectId={selectedProjectId}
-        onSelectProject={(id) => setSelectedProjectId(id)}
-        selectedProject={selectedProject}
-        projectAdjustments={selectedAdjustments}
-        overrides={selectedOverrides}
-        onOverrideChange={(projectId, date, field, value) => updateMonthlyOverride(projectId, date, field, value)}
-        onResetOverrides={() => selectedProjectId && resetOverrides(selectedProjectId)}
-        onResetProjectSettings={() => selectedProjectId && resetProjectSettings(selectedProjectId)}
-        onSettingChange={(projectId, section, key, value) => updateProjectSetting(projectId, section, key, value)}
-      />
-
-      <main className="flex-1 overflow-y-auto p-8">
+    <div className="min-h-screen bg-slate-950 text-white">
+      <main className="p-8">
         <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-blue-300">Live Forecast</p>
@@ -112,6 +116,7 @@ export default function HomePage() {
         <div className="mb-6 flex flex-wrap items-center gap-3">
           {[
             { key: 'overview', label: 'Overview' },
+            { key: 'project-settings', label: 'Project Settings' },
             { key: 'expenses-input', label: 'Expenses Input' },
             { key: 'expenses-analytics', label: 'Expenses Analytics' },
           ].map((tab) => (
@@ -120,7 +125,11 @@ export default function HomePage() {
               type="button"
               onClick={() =>
                 setActivePanel(
-                  tab.key as 'overview' | 'expenses-input' | 'expenses-analytics'
+                  tab.key as
+                    | 'overview'
+                    | 'project-settings'
+                    | 'expenses-input'
+                    | 'expenses-analytics'
                 )
               }
               className={cn(
@@ -146,16 +155,96 @@ export default function HomePage() {
           onUpdate={() => persistScenario({ id: activeScenarioId ?? undefined })}
         />
 
-        {activePanel === 'expenses-input' && (
+        {activePanel === 'project-settings' && (
+          <div className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-4">
+            <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+              <aside className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-blue-300">Projects</p>
+                <div className="mt-3 space-y-2">
+                  {blueprint.projects.map((project) => (
+                    <div key={project.id} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProjectId(project.id)}
+                        className={cn(
+                          'flex-1 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition',
+                          selectedProjectId === project.id
+                            ? 'border-blue-400 bg-blue-500/10 text-white'
+                            : 'border-white/10 text-white/70 hover:border-white/40 hover:text-white'
+                        )}
+                      >
+                        <div className="uppercase text-[10px] tracking-[0.3em] text-white/40">
+                          {project.id}
+                        </div>
+                        <div>{project.name}</div>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={blueprint.projects.length <= 1 || isProjectMutating}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (
+                            blueprint.projects.length <= 1 ||
+                            !window.confirm(`Delete project "${project.name}"?`)
+                          ) {
+                            return;
+                          }
+                          void removeProject(project.id);
+                        }}
+                        className="rounded-lg border border-red-500/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                  <form onSubmit={handleCreateProject} className="mt-4 flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="New project name"
+                      value={newProjectName}
+                      onChange={(event) => setNewProjectName(event.target.value)}
+                      className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newProjectName.trim() || isProjectMutating}
+                      className="rounded-lg border border-white/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:border-blue-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </form>
+                </div>
+              </aside>
+              <div className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                <ProjectSidebar
+                  selectedProject={selectedProject}
+                  projectAdjustments={selectedAdjustments}
+                  overrides={selectedOverrides}
+                  onOverrideChange={(projectId, date, field, value) =>
+                    updateMonthlyOverride(projectId, date, field, value)
+                  }
+                  onResetOverrides={() => selectedProjectId && resetOverrides(selectedProjectId)}
+                  onResetProjectSettings={() =>
+                    selectedProjectId && resetProjectSettings(selectedProjectId)
+                  }
+                  onSettingChange={(projectId, section, key, value) =>
+                    updateProjectSetting(projectId, section, key, value)
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activePanel === 'expenses-input' && simulation && (
           <ExpensesPanel
-            projects={blueprint.projects}
-            overrides={overrides}
-            sharedExpenses={sharedExpenses}
-            onSharedExpenseChange={updateSharedExpense}
+            months={simulation.metadata.months}
+            baseExpenses={sharedExpenseBase}
+            overrides={sharedExpenseOverrides}
+            onBaseChange={updateSharedExpenseBase}
+            onOverrideChange={updateSharedExpenseOverride}
             onResetSharedExpenses={resetSharedExpenseInputs}
-            onSalesMarketingChange={(projectId, date, value) =>
-              updateMonthlyOverride(projectId, date, 'salesMarketingExpense', value)
-            }
+            onResetMonthOverrides={clearSharedExpenseOverridesForMonth}
           />
         )}
 
@@ -165,40 +254,42 @@ export default function HomePage() {
           </div>
         )}
 
-        <section className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-300">Compare Plans</p>
-            <button
-              type="button"
-              onClick={() => setProjectFilters(blueprint.projects.map((project) => project.id))}
-              className="text-xs font-semibold uppercase tracking-wide text-white/70 hover:text-white"
-            >
-              Select All
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {blueprint.projects.map((project) => {
-              const active = selectedProjectIds.includes(project.id);
-              return (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => toggleProjectSelection(project.id)}
-                  className={cn(
-                    'rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition',
-                    active
-                      ? 'border-blue-400 bg-blue-500/20 text-blue-100'
-                      : 'border-white/20 bg-transparent text-white/70 hover:border-white/60'
-                  )}
-                >
-                  {project.name}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+        {(activePanel === 'overview' || activePanel === 'expenses-analytics') && (
+          <section className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.4em] text-blue-300">Compare Plans</p>
+              <button
+                type="button"
+                onClick={() => setProjectFilters(blueprint.projects.map((project) => project.id))}
+                className="text-xs font-semibold uppercase tracking-wide text-white/70 hover:text-white"
+              >
+                Select All
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {blueprint.projects.map((project) => {
+                const active = selectedProjectIds.includes(project.id);
+                return (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => toggleProjectSelection(project.id)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition',
+                      active
+                        ? 'border-blue-400 bg-blue-500/20 text-blue-100'
+                        : 'border-white/20 bg-transparent text-white/70 hover:border-white/60'
+                    )}
+                  >
+                    {project.name}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
-        {activePanel !== 'expenses-input' && (
+        {(activePanel === 'overview' || activePanel === 'expenses-analytics') && (
           <>
             {activePanel === 'overview' && (
               <div className="space-y-8">
@@ -243,18 +334,6 @@ export default function HomePage() {
                 </div>
 
                 <Card>
-                  <CardHeader>
-                    <CardTitle>Retention Heatmap</CardTitle>
-                    <p className="text-sm text-white/60">
-                      Cohort view for {selectedProject?.name ?? 'selected project'}
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <RetentionHeatmap cohort={cohort} />
-                  </CardContent>
-                </Card>
-
-                <Card>
                   <CardHeader className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <CardTitle>Live Breakdown</CardTitle>
@@ -296,6 +375,20 @@ export default function HomePage() {
                     </div>
                   </CardContent>
                 </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Retention Heatmap</CardTitle>
+                    <p className="text-sm text-white/60">
+                      Cohort view for {selectedProject?.name ?? 'selected project'}
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <RetentionHeatmap cohort={cohort} />
+                  </CardContent>
+                </Card>
+
+                
               </div>
             )}
 

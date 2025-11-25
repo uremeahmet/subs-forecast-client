@@ -50,8 +50,10 @@ export const MonthlyEditor = ({ project, overrides, onChange }: MonthlyEditorPro
                 const override = overrides[entry.date];
                 const finalGrowth = (override?.growth ?? entry.growthRate) * 100;
                 const finalChurn = (override?.churn ?? entry.churnRate) * 100;
+                const finalSmExpense = override?.salesMarketingExpense ?? entry.salesMarketingExpense ?? 0;
                 const isGrowthCustom = override?.growth !== undefined;
                 const isChurnCustom = override?.churn !== undefined;
+                const isSmCustom = override?.salesMarketingExpense !== undefined;
                 return (
                   <div
                     key={entry.date}
@@ -91,6 +93,23 @@ export const MonthlyEditor = ({ project, overrides, onChange }: MonthlyEditorPro
                         className={cn(
                           'w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-red-400',
                           isChurnCustom && 'border-red-400/80 bg-red-500/10'
+                        )}
+                      />
+                    </label>
+                    <label className="flex flex-1 flex-col gap-1">
+                      <span className="text-[10px] uppercase tracking-widest text-white/40">
+                        Sales & Marketing Expenses ($)
+                      </span>
+                      <input
+                        type="number"
+                        step="10"
+                        value={finalSmExpense.toFixed(0)}
+                        onChange={(event) =>
+                          onChange(entry.date, 'salesMarketingExpense', Number(event.target.value) || 0)
+                        }
+                        className={cn(
+                          'w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-emerald-400',
+                          isSmCustom && 'border-emerald-400/80 bg-emerald-500/10'
                         )}
                       />
                     </label>

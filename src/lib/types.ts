@@ -33,6 +33,8 @@ export interface SharedExpenses {
   depreciationAndAmortization: number;
 }
 
+export type SharedExpenseOverrides = Record<string, Partial<SharedExpenses>>;
+
 export interface GlobalSettings {
   startDate: string;
   endDate: string;
@@ -47,6 +49,7 @@ export interface GlobalSettings {
   corporateTaxRate: number;
   corporateTaxThreshold: number;
   sharedExpenses: SharedExpenses;
+  sharedExpenseOverrides?: SharedExpenseOverrides;
 }
 
 export interface ProjectTimeseriesPoint {
@@ -159,6 +162,7 @@ export interface SimulationRequestPayload {
   projects?: SimulationProjectPayload[];
   globalSettings?: Partial<Omit<GlobalSettings, 'sharedExpenses'>> & {
     sharedExpenses?: Partial<SharedExpenses>;
+    sharedExpenseOverrides?: SharedExpenseOverrides;
   };
   selectedProjectIds?: string[];
 }
@@ -181,6 +185,7 @@ export type ProjectSettingsState = Record<string, ProjectSettingAdjustment>;
 
 type ScenarioGlobalSettings = Partial<Omit<GlobalSettings, 'sharedExpenses'>> & {
   sharedExpenses?: Partial<SharedExpenses>;
+  sharedExpenseOverrides?: SharedExpenseOverrides;
 };
 
 export interface ScenarioPayload {
@@ -196,4 +201,10 @@ export interface ScenarioRecord extends ScenarioPayload {
   id: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectRecord {
+  id: string;
+  name: string;
+  description?: string;
 }

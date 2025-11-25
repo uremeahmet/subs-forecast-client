@@ -2,12 +2,8 @@
 
 import { MonthlyEditor } from './MonthlyEditor';
 import type { BlueprintProject, RateOverride } from '@/lib/types';
-import { cn } from '@/lib/cn';
 
 interface ProjectSidebarProps {
-  projects: BlueprintProject[];
-  selectedProjectId: string | null;
-  onSelectProject: (id: string) => void;
   selectedProject: BlueprintProject | null;
   projectAdjustments?: {
     startingSubscribers?: number;
@@ -27,9 +23,6 @@ interface ProjectSidebarProps {
 }
 
 export const ProjectSidebar = ({
-  projects,
-  selectedProjectId,
-  onSelectProject,
   selectedProject,
   projectAdjustments,
   overrides,
@@ -38,34 +31,16 @@ export const ProjectSidebar = ({
   onResetProjectSettings,
   onSettingChange,
 }: ProjectSidebarProps) => {
+  if (!selectedProject) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+        Select a project to edit settings.
+      </div>
+    );
+  }
+
   return (
-    <aside className="w-[360px] shrink-0 border-r border-white/5 bg-slate-950/70 p-6 text-white">
-      <div className="mb-6">
-        <p className="text-xs uppercase tracking-[0.3em] text-blue-300">Projects</p>
-        <h2 className="text-2xl font-semibold text-white">Control Center</h2>
-      </div>
-
-      <div className="space-y-3">
-        {projects.map((project) => {
-          const isActive = project.id === selectedProjectId;
-          return (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() => onSelectProject(project.id)}
-              className={cn(
-                'w-full rounded-2xl border border-white/5 bg-white/5 p-4 text-left transition hover:border-blue-400/60 hover:bg-white/10',
-                isActive && 'border-blue-400 bg-blue-500/10'
-              )}
-            >
-              <p className="text-xs uppercase tracking-[0.2em] text-white/60">{project.id}</p>
-              <h3 className="text-lg font-semibold text-white">{project.name}</h3>
-              <p className="text-sm text-white/60">{project.description}</p>
-            </button>
-          );
-        })}
-      </div>
-
+    <div className="text-white">
       {selectedProject && (
         <div className="mt-8 space-y-6">
           <div>
@@ -179,6 +154,6 @@ export const ProjectSidebar = ({
           </div>
         </div>
       )}
-    </aside>
+    </div>
   );
 };
