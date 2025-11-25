@@ -15,6 +15,7 @@ import type {
   RateOverride,
   ScenarioRecord,
   SharedExpenses,
+  SimulationProjectPayload,
   SimulationRequestPayload,
   SimulationResponse,
 } from '../lib/types';
@@ -148,36 +149,36 @@ export const useForecastSimulation = () => {
           selectedProjectIds: nextSelected,
         };
 
-        const projectPayload = blueprint.projects
-          .map((project) => {
-            const overrideEntries = Object.entries(nextOverrides[project.id] ?? {});
-            const settings = nextSettings[project.id];
-            const monthlyOverrides = overrideEntries.map(([date, value]) => ({
-              date,
-              growth: value.growth,
-              churn: value.churn,
-              salesMarketingExpense: value.salesMarketingExpense,
-            }));
+        const projectPayload: SimulationProjectPayload[] = [];
 
-            const hasSettings = Boolean(
-              settings?.startingSubscribers !== undefined ||
-                (settings?.pricing && Object.keys(settings.pricing).length) ||
-                (settings?.metrics && Object.keys(settings.metrics).length)
-            );
+        blueprint.projects.forEach((project) => {
+          const overrideEntries = Object.entries(nextOverrides[project.id] ?? {});
+          const settings = nextSettings[project.id];
+          const monthlyOverrides = overrideEntries.map(([date, value]) => ({
+            date,
+            growth: value.growth,
+            churn: value.churn,
+            salesMarketingExpense: value.salesMarketingExpense,
+          }));
 
-            if (!monthlyOverrides.length && !hasSettings) {
-              return null;
-            }
+          const hasSettings = Boolean(
+            settings?.startingSubscribers !== undefined ||
+              (settings?.pricing && Object.keys(settings.pricing).length) ||
+              (settings?.metrics && Object.keys(settings.metrics).length)
+          );
 
-            return {
-              id: project.id,
-              startingSubscribers: settings?.startingSubscribers,
-              pricing: settings?.pricing,
-              metrics: settings?.metrics,
-              monthlyOverrides,
-            };
-          })
-          .filter(Boolean);
+          if (!monthlyOverrides.length && !hasSettings) {
+            return;
+          }
+
+          projectPayload.push({
+            id: project.id,
+            startingSubscribers: settings?.startingSubscribers,
+            pricing: settings?.pricing,
+            metrics: settings?.metrics,
+            monthlyOverrides,
+          });
+        });
 
         if (projectPayload.length) {
           payload.projects = projectPayload;
@@ -288,9 +289,11 @@ export const useForecastSimulation = () => {
           existing.startingSubscribers = nextValue;
         } else {
           const containerKey = section === 'pricing' ? 'pricing' : 'metrics';
-          const defaults = project[containerKey];
-          const container = { ...(existing[containerKey] ?? {}) };
-          container[key as keyof typeof container] = nextValue;
+          const defaults = project[containerKey] as unknown as Record<string, number>;
+          const container = {
+            ...((existing[containerKey] as Record<string, number> | undefined) ?? {}),
+          };
+          container[key] = nextValue;
 
           const defaultValue = defaults[key as keyof typeof defaults];
           if (defaultValue !== undefined && Math.abs(defaultValue - nextValue) < 0.0001) {
