@@ -118,7 +118,11 @@ export default function HomePage() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActivePanel(tab.key as 'overview' | 'expenses')}
+              onClick={() =>
+                setActivePanel(
+                  tab.key as 'overview' | 'expenses-input' | 'expenses-analytics'
+                )
+              }
               className={cn(
                 'rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition',
                 activePanel === tab.key
