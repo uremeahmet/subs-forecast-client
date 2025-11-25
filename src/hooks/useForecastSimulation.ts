@@ -598,6 +598,13 @@ export const useForecastSimulation = () => {
     [blueprint, triggerSimulation]
   );
 
+  useEffect(() => {
+    if (!blueprint) return;
+    if (activeScenarioId) return;
+    if (!scenarios.length) return;
+    applyScenario(scenarios[0]);
+  }, [applyScenario, activeScenarioId, blueprint, scenarios]);
+
   const selectScenario = useCallback(
     (scenarioId: string | null) => {
       if (!scenarioId) {

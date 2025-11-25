@@ -37,12 +37,12 @@ export const ScenarioToolbar = ({
             }}
             className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
           >
-            <option value="">Active Draft</option>
             {scenarios.map((scenario) => (
               <option key={scenario.id} value={scenario.id}>
                 {scenario.name}
               </option>
             ))}
+            <option value="">Empty Draft</option>
           </select>
         </div>
         <div className="flex flex-1 flex-col gap-2 md:max-w-xl">
