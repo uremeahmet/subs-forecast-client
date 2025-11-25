@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { SharedExpenses, SharedExpenseOverrides } from '@/lib/types';
 
 const sharedExpenseLabels: Record<keyof SharedExpenses, string> = {
@@ -32,24 +32,7 @@ export const ExpensesPanel = ({
   onResetSharedExpenses,
   onResetMonthOverrides,
 }: ExpensesPanelProps) => {
-  const groupedMonths = useMemo(() => {
-    return months.reduce<Record<string, string[]>>((acc, month) => {
-      const year = month.slice(0, 4);
-      if (!acc[year]) acc[year] = [];
-      acc[year].push(month);
-      return acc;
-    }, {});
-  }, [months]);
-
-  const years = useMemo(() => Object.keys(groupedMonths).sort(), [groupedMonths]);
-  const [openYear, setOpenYear] = useState<string>('');
-  const resolvedOpenYear = useMemo(() => {
-    if (!years.length) return '';
-    if (openYear && years.includes(openYear)) {
-      return openYear;
-    }
-    return years[0];
-  }, [openYear, years]);
+  const sortedMonths = useMemo(() => [...months], [months]);
 
   return (
     <section className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-6">
@@ -97,80 +80,66 @@ export const ExpensesPanel = ({
           </div>
         </div>
 
-        <div className="space-y-4">
-          {years.map((year) => {
-            const isExpanded = resolvedOpenYear === year;
-            return (
-              <div key={year} className="rounded-2xl border border-white/10 bg-white/5">
-                <button
-                  type="button"
-                  onClick={() => setOpenYear(() => (isExpanded ? '' : year))}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-white/80"
-                >
-                  <span>{year}</span>
-                  <span className="text-xs uppercase tracking-[0.3em] text-blue-300">
-                    {isExpanded ? 'Hide Months' : 'Show Months'}
-                  </span>
-                </button>
-                {isExpanded && (
-                <div className="divide-y divide-white/10">
-                  {groupedMonths[year]?.map((month) => {
-                    const override = overrides[month];
-                    return (
-                      <div key={month} className="space-y-3 px-4 py-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.3em] text-white/40">{year}</p>
-                            <p className="text-sm font-semibold text-white">{monthLabel(month)}</p>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={!override}
-                            onClick={() => onResetMonthOverrides(month)}
-                            className="text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
-                          >
-                            Reset Month
-                          </button>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {(Object.keys(sharedExpenseLabels) as Array<keyof SharedExpenses>).map(
-                            (key) => {
-                              const baseValue = baseExpenses?.[key] ?? 0;
-                              const currentValue = override?.[key] ?? baseValue;
-                              const isCustom = override?.[key] !== undefined;
-                              return (
-                                <label key={key} className="flex flex-col gap-2 text-sm text-white/80">
-                                  <span className="text-[10px] uppercase tracking-[0.3em] text-white/40">
-                                    {sharedExpenseLabels[key]}
-                                  </span>
-                                  <input
-                                    type="number"
-                                    step="100"
-                                    min={0}
-                                    value={currentValue}
-                                    disabled={!baseExpenses}
-                                    onChange={(event) =>
-                                      onOverrideChange(month, key, Number(event.target.value) || 0)
-                                    }
-                                    className={`rounded-xl border px-3 py-2 text-white outline-none focus:border-emerald-400 ${
-                                      isCustom
-                                        ? 'border-emerald-300/70 bg-emerald-500/10'
-                                        : 'border-white/10 bg-slate-900/40'
-                                    } ${!baseExpenses ? 'opacity-50' : ''}`}
-                                  />
-                                </label>
-                              );
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+          <table className="min-w-full text-left text-sm text-white/80">
+            <thead>
+              <tr className="border-b border-white/10 text-xs uppercase tracking-[0.3em] text-white/40">
+                <th className="px-4 py-3">Month</th>
+                {(Object.keys(sharedExpenseLabels) as Array<keyof SharedExpenses>).map((key) => (
+                  <th key={key} className="px-4 py-3">
+                    {sharedExpenseLabels[key]}
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedMonths.map((month) => {
+                const year = month.slice(0, 4);
+                const override = overrides[month];
+                return (
+                  <tr key={month} className="border-b border-white/5 last:border-0">
+                    <td className="px-4 py-3 align-middle">
+                      <div className="font-semibold text-white">{monthLabel(month)}</div>
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-white/40">{year}</div>
+                    </td>
+                    {(Object.keys(sharedExpenseLabels) as Array<keyof SharedExpenses>).map((key) => {
+                      const baseValue = baseExpenses?.[key] ?? 0;
+                      const currentValue = override?.[key] ?? baseValue;
+                      const isCustom = override?.[key] !== undefined;
+                      return (
+                        <td key={key} className="px-4 py-3 align-middle">
+                          <input
+                            type="number"
+                            step="100"
+                            min={0}
+                            value={currentValue}
+                            disabled={!baseExpenses}
+                            onChange={(event) =>
+                              onOverrideChange(month, key, Number(event.target.value) || 0)
                             }
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                )}
-              </div>
-            );
-          })}
+                            className={`w-full rounded-lg border px-3 py-2 text-white outline-none focus:border-emerald-400 ${
+                              isCustom ? 'border-emerald-300/60 bg-emerald-500/10' : 'border-white/10 bg-slate-900/40'
+                            } ${!baseExpenses ? 'opacity-50' : ''}`}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        type="button"
+                        disabled={!override}
+                        onClick={() => onResetMonthOverrides(month)}
+                        className="text-xs font-semibold uppercase tracking-wide text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:text-white/30"
+                      >
+                        Reset
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
