@@ -17,21 +17,41 @@ const monthLabel = (date: string) => {
 };
 
 export const MonthlyEditor = ({ project, overrides, onChange }: MonthlyEditorProps) => {
-  const [openYear, setOpenYear] = useState<string>('2026');
+  const [openYear, setOpenYear] = useState<string>(() => project.monthlyData.at(0)?.date.slice(0, 4) ?? '');
 
-  const grouped = useMemo(() => {
-    return project.monthlyData.reduce<Record<string, typeof project.monthlyData>>((acc, entry) => {
-      const year = entry.date.slice(0, 4);
-      if (!acc[year]) acc[year] = [];
-      acc[year].push(entry);
-      return acc;
-    }, {});
+  const { grouped, years } = useMemo(() => {
+    const buckets = project.monthlyData.reduce<Record<string, typeof project.monthlyData>>(
+      (acc, entry) => {
+        const year = entry.date.slice(0, 4);
+        if (!acc[year]) acc[year] = [];
+        acc[year].push(entry);
+        return acc;
+      },
+      {}
+    );
+    return { grouped: buckets, years: Object.keys(buckets).sort() };
   }, [project]);
 
-  const years = Object.keys(grouped).sort();
+  const firstMonth = project.monthlyData.at(0)?.date;
+  const lastMonth = project.monthlyData.at(-1)?.date;
+  const formatRangeLabel = () => {
+    if (!firstMonth || !lastMonth) return '';
+    const format = (date: string) =>
+      new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(
+        new Date(`${date}-01`)
+      );
+    return `${format(firstMonth)} — ${format(lastMonth)}`;
+  };
+  const dateRangeLabel = formatRangeLabel();
 
   return (
     <div className="space-y-4">
+      {dateRangeLabel && (
+        <div className="rounded-lg border border-white/10 bg-slate-900/60 px-4 py-3 text-xs text-white/70">
+          <p className="text-[10px] uppercase tracking-[0.4em] text-blue-300">Override Window</p>
+          <p className="mt-2 text-sm font-semibold text-white">{dateRangeLabel}</p>
+        </div>
+      )}
       {years.map((year) => (
         <div key={year} className="rounded-xl border border-white/5 bg-white/5">
           <button

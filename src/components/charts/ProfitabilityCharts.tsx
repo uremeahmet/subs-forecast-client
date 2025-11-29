@@ -1,8 +1,6 @@
 'use client';
 
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -15,9 +13,11 @@ import {
 } from 'recharts';
 import type { TimeseriesPoint } from '@/lib/types';
 import { formatCompactCurrency } from '@/lib/format';
+import { ProjectMetricAreaChart } from '@/components/charts/MrrAreaChart';
 
 interface ProfitabilityChartsProps {
   timeseries: TimeseriesPoint[];
+  selectedProjectIds: string[];
 }
 
 const formatDate = (iso: string) =>
@@ -25,7 +25,7 @@ const formatDate = (iso: string) =>
     new Date(`${iso}-01`)
   );
 
-export const ProfitabilityCharts = ({ timeseries }: ProfitabilityChartsProps) => {
+export const ProfitabilityCharts = ({ timeseries, selectedProjectIds }: ProfitabilityChartsProps) => {
   const data = timeseries.map((entry) => {
     const totalExpenses =
       entry.totals.salesMarketingExpense +
@@ -98,27 +98,17 @@ export const ProfitabilityCharts = ({ timeseries }: ProfitabilityChartsProps) =>
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-blue-300">COGS Trend</p>
               <h3 className="text-xl font-semibold text-white">Cost of Goods Sold</h3>
+              <p className="text-sm text-white/60">Proje dağılımı veya toplam görünümü arasında geçiş yap.</p>
             </div>
           </div>
-          <div className="mt-4 h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ left: 0, right: 20, top: 10, bottom: 0 }}>
-                <XAxis dataKey="date" tickFormatter={formatDate} stroke="#94a3b8" tickLine={false} />
-                <YAxis
-                  stroke="#94a3b8"
-                  tickFormatter={(value) => formatCompactCurrency(value).replace('.0', '')}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    border: '1px solid rgba(148,163,184,0.2)',
-                  }}
-                  labelFormatter={(value) => formatDate(value as string)}
-                  formatter={(value: number) => formatCompactCurrency(value)}
-                />
-                <Area type="monotone" dataKey="cogs" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="mt-4">
+            <ProjectMetricAreaChart
+              timeseries={timeseries}
+              selectedProjectIds={selectedProjectIds}
+              metric="cogs"
+              yAxisTickFormatter={(value) => formatCompactCurrency(value).replace('.0', '')}
+              valueFormatter={(value) => formatCompactCurrency(value)}
+            />
           </div>
         </div>
 

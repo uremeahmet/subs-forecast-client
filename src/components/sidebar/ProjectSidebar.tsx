@@ -31,6 +31,13 @@ export const ProjectSidebar = ({
   onResetProjectSettings,
   onSettingChange,
 }: ProjectSidebarProps) => {
+  const formatMonthLabel = (month?: string) =>
+    month
+      ? new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(
+          new Date(`${month}-01`)
+        )
+      : null;
+
   if (!selectedProject) {
     return (
       <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
@@ -39,10 +46,25 @@ export const ProjectSidebar = ({
     );
   }
 
+  const firstMonth = selectedProject.monthlyData.at(0)?.date;
+  const lastMonth = selectedProject.monthlyData.at(-1)?.date;
+  const formattedStart = formatMonthLabel(firstMonth);
+  const formattedEnd = formatMonthLabel(lastMonth);
+  const dateRangeLabel =
+    formattedStart && formattedEnd ? `${formattedStart} — ${formattedEnd}` : formattedStart ?? '';
+
   return (
     <div className="text-white">
       {selectedProject && (
         <div className="mt-8 space-y-6">
+          {dateRangeLabel && (
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+              <p className="text-[10px] uppercase tracking-[0.4em] text-blue-300">Forecast Range</p>
+              <p className="mt-2 text-lg font-semibold text-white">{dateRangeLabel}</p>
+              <p className="text-sm text-white/60">Monthly overrides are available throughout this window.</p>
+            </div>
+          )}
+
           <div>
             <div className="flex items-center justify-between">
               <p className="text-xs uppercase tracking-wide text-white/60">Project Settings</p>
@@ -60,7 +82,7 @@ export const ProjectSidebar = ({
                   Starting Subscribers
                 </span>
                 <input
-                  type="number"
+                  type="text"
                   min={0}
                   value={
                     projectAdjustments?.startingSubscribers ?? selectedProject.startingSubscribers
@@ -80,7 +102,7 @@ export const ProjectSidebar = ({
               <label className="flex flex-col gap-1 text-white/80">
                 <span className="text-[10px] uppercase tracking-widest text-white/40">Price ($)</span>
                 <input
-                  type="number"
+                  type="text"
                   min={0}
                   step="0.5"
                   value={projectAdjustments?.pricing?.base ?? selectedProject.pricing.base}
@@ -94,7 +116,7 @@ export const ProjectSidebar = ({
               <label className="flex flex-col gap-1 text-white/80">
                 <span className="text-[10px] uppercase tracking-widest text-white/40">Cost Ratio (%)</span>
                 <input
-                  type="number"
+                  type="text"
                   min={0}
                   max={100}
                   step="0.5"
@@ -114,7 +136,7 @@ export const ProjectSidebar = ({
               <label className="flex flex-col gap-1 text-white/80">
                 <span className="text-[10px] uppercase tracking-widest text-white/40">Fee Ratio (%)</span>
                 <input
-                  type="number"
+                  type="text"
                   min={0}
                   max={100}
                   step="0.1"
@@ -146,6 +168,7 @@ export const ProjectSidebar = ({
             </div>
             <div className="mt-4">
               <MonthlyEditor
+                key={selectedProject.id}
                 project={selectedProject}
                 overrides={overrides}
                 onChange={(date, field, value) => onOverrideChange(selectedProject.id, date, field, value)}

@@ -1,12 +1,11 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { ProjectSidebar } from '@/components/sidebar/ProjectSidebar';
 import { useForecastSimulation } from '@/hooks/useForecastSimulation';
 import { KpiGrid } from '@/components/control-center/KpiGrid';
-import { MrrAreaChart } from '@/components/charts/MrrAreaChart';
+import { ArrAreaChart, MrrAreaChart, ActiveSubscriptionsAreaChart } from '@/components/charts/MrrAreaChart';
 import { GrowthBreakdownChart } from '@/components/charts/GrowthBreakdownChart';
-import { RetentionHeatmap } from '@/components/charts/RetentionHeatmap';
 import { ScenarioToolbar } from '@/components/control-center/ScenarioToolbar';
 import { ExpensesPanel } from '@/components/expenses/ExpensesPanel';
 import { ProfitabilityCharts } from '@/components/charts/ProfitabilityCharts';
@@ -19,6 +18,8 @@ export default function HomePage() {
     'overview' | 'project-settings' | 'expenses-input' | 'expenses-analytics'
   >('overview');
   const [newProjectName, setNewProjectName] = useState('');
+  const [rangeStart, setRangeStart] = useState<string | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<string | null>(null);
   const {
     blueprint,
     simulation,
@@ -66,6 +67,22 @@ export default function HomePage() {
     setNewProjectName('');
   };
 
+  const months = simulation?.metadata.months ?? [];
+  const defaultRangeStart = months[0] ?? '';
+  const defaultRangeEnd = months[months.length - 1] ?? '';
+  const safeRangeStart =
+    rangeStart && months.includes(rangeStart) ? rangeStart : defaultRangeStart;
+  const safeRangeEnd = rangeEnd && months.includes(rangeEnd) ? rangeEnd : defaultRangeEnd;
+
+  const filteredTimeseries = useMemo(() => {
+    if (!simulation || !safeRangeStart || !safeRangeEnd) {
+      return simulation?.timeseries ?? [];
+    }
+    return simulation.timeseries.filter(
+      (point) => point.date >= safeRangeStart && point.date <= safeRangeEnd
+    );
+  }, [simulation, safeRangeStart, safeRangeEnd]);
+
   if (isLoading || !blueprint || !simulation) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
@@ -77,11 +94,48 @@ export default function HomePage() {
     );
   }
 
-  const latestTotals = simulation.timeseries.at(-1)?.totals ?? null;
-  const previousTotals = simulation.timeseries.at(-2)?.totals ?? null;
-  const cohort = simulation.cohorts.find((entry) => entry.projectId === selectedProjectId);
+  const visibleTimeseries = filteredTimeseries.length ? filteredTimeseries : simulation.timeseries;
+
+  const latestTotals = visibleTimeseries.at(-1)?.totals ?? null;
+  const previousTotals = visibleTimeseries.at(-2)?.totals ?? null;
   const selectedOverrides = selectedProjectId ? overrides[selectedProjectId] ?? {} : {};
   const selectedAdjustments = selectedProjectId ? projectSettings[selectedProjectId] : undefined;
+  const formatMonthLabel = (month?: string) =>
+    month
+      ? new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(
+          new Date(`${month}-01`)
+        )
+      : '';
+  const forecastRangeLabel = [
+    formatMonthLabel(simulation.metadata.months[0]),
+    formatMonthLabel(simulation.metadata.months.at(-1)),
+  ]
+    .filter(Boolean)
+    .join(' — ');
+
+  const selectedRangeLabel =
+    safeRangeStart && safeRangeEnd
+      ? [formatMonthLabel(safeRangeStart), formatMonthLabel(safeRangeEnd)]
+          .filter(Boolean)
+          .join(' — ')
+      : '';
+
+  const handleRangeChange = (type: 'start' | 'end', value: string) => {
+    if (!value) {
+      return;
+    }
+    if (type === 'start') {
+      setRangeStart(value);
+      if (rangeEnd && value > rangeEnd) {
+        setRangeEnd(value);
+      }
+    } else {
+      setRangeEnd(value);
+      if (rangeStart && rangeStart > value) {
+        setRangeStart(value);
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -155,8 +209,61 @@ export default function HomePage() {
           onUpdate={() => persistScenario({ id: activeScenarioId ?? undefined })}
         />
 
+        {safeRangeStart && safeRangeEnd && (
+          <section className="mb-6 rounded-2xl border border-white/5 bg-white/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-blue-300">Date Range</p>
+                <p className="text-lg font-semibold text-white">
+                  {selectedRangeLabel || 'Select range'}
+                </p>
+                <p className="text-sm text-white/60">
+                  All reports below reflect this window.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-end gap-4">
+                <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-white/60">
+                  <span>From</span>
+                  <select
+                    value={safeRangeStart}
+                    onChange={(event) => handleRangeChange('start', event.target.value)}
+                    className="mt-1 rounded-lg border border-white/20 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
+                  >
+                    {simulation.metadata.months.map((month) => (
+                      <option key={month} value={month}>
+                        {formatMonthLabel(month) ?? month}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col text-xs font-semibold uppercase tracking-wide text-white/60">
+                  <span>To</span>
+                  <select
+                    value={safeRangeEnd}
+                    onChange={(event) => handleRangeChange('end', event.target.value)}
+                    className="mt-1 rounded-lg border border-white/20 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
+                  >
+                    {simulation.metadata.months.map((month) => (
+                      <option key={month} value={month}>
+                        {formatMonthLabel(month) ?? month}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+        )}
+
         {activePanel === 'project-settings' && (
           <div className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-4">
+            <div className="mb-6 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+              <p className="text-[10px] uppercase tracking-[0.4em] text-blue-300">Forecast Range</p>
+              <p className="mt-2 text-lg font-semibold text-white">{forecastRangeLabel}</p>
+              <p className="text-sm text-white/60">
+                Monthly overrides and project settings apply across this window.
+              </p>
+            </div>
             <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
               <aside className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
                 <p className="text-xs uppercase tracking-[0.3em] text-blue-300">Projects</p>
@@ -294,10 +401,10 @@ export default function HomePage() {
             {activePanel === 'overview' && (
               <div className="space-y-8">
                 <KpiGrid
-                  summary={simulation.summary}
+                  summary={null}
                   latest={latestTotals}
                   previous={previousTotals}
-                  timeseries={simulation.timeseries}
+                  timeseries={visibleTimeseries}
                 />
 
                 <div className="grid gap-6 xl:grid-cols-2">
@@ -316,7 +423,7 @@ export default function HomePage() {
                     </CardHeader>
                     <CardContent>
                       <MrrAreaChart
-                        timeseries={simulation.timeseries}
+                        timeseries={visibleTimeseries}
                         selectedProjectIds={selectedProjectIds}
                       />
                     </CardContent>
@@ -328,7 +435,51 @@ export default function HomePage() {
                       <p className="text-sm text-white/60">Positive vs negative MRR drivers</p>
                     </CardHeader>
                     <CardContent>
-                      <GrowthBreakdownChart timeseries={simulation.timeseries} />
+                      <GrowthBreakdownChart timeseries={visibleTimeseries} />
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <Card>
+                    <CardHeader className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Active Subscriptions</CardTitle>
+                        <p className="text-sm text-white/60">Stacked projections per project</p>
+                      </div>
+                      <div className="text-right text-sm text-white/60">
+                        <p>Total Active Subs</p>
+                        <p className="text-xl font-semibold text-white">
+                          {formatNumber(latestTotals?.activeSubscriptions ?? 0)}
+                        </p>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <ActiveSubscriptionsAreaChart
+                        timeseries={visibleTimeseries}
+                        selectedProjectIds={selectedProjectIds}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Annual Run Rate</CardTitle>
+                        <p className="text-sm text-white/60">Yearly revenue stacked by project</p>
+                      </div>
+                      <div className="text-right text-sm text-white/60">
+                        <p>Total ARR</p>
+                        <p className="text-xl font-semibold text-white">
+                          {formatCurrency(latestTotals?.arr ?? 0)}
+                        </p>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <ArrAreaChart
+                        timeseries={visibleTimeseries}
+                        selectedProjectIds={selectedProjectIds}
+                      />
                     </CardContent>
                   </Card>
                 </div>
@@ -375,26 +526,16 @@ export default function HomePage() {
                     </div>
                   </CardContent>
                 </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Retention Heatmap</CardTitle>
-                    <p className="text-sm text-white/60">
-                      Cohort view for {selectedProject?.name ?? 'selected project'}
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <RetentionHeatmap cohort={cohort} />
-                  </CardContent>
-                </Card>
-
                 
               </div>
             )}
 
             {activePanel === 'expenses-analytics' && (
               <div className="mt-8">
-                <ProfitabilityCharts timeseries={simulation.timeseries} />
+                <ProfitabilityCharts
+                  timeseries={visibleTimeseries}
+                  selectedProjectIds={selectedProjectIds}
+                />
               </div>
             )}
           </>
